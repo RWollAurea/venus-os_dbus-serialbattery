@@ -1,158 +1,154 @@
 # AGENTS.md
 
-## Zweck
+## Start einer neuen Arbeitssitzung
 
-Diese Datei enthält die verbindlichen Arbeitsregeln für Entwicklungs- und Fehleranalysearbeiten am Projekt **Victron BMV-712 + ECS LiPro als BMS**.
+Vor jeder Analyse oder Änderung in dieser Reihenfolge lesen:
+
+1. `dbus-serialbattery/AGENTS.md`
+2. `dbus-serialbattery/docs/PROJECT_STATE.md`
+3. `dbus-serialbattery/docs/VENUS_DEPLOYMENT.md`
+4. `dbus-serialbattery/docs/ECS_MODBUS.md`
+5. `dbus-serialbattery/docs/DBUS_MAPPING.md`
+6. `dbus-serialbattery/docs/TEST_PLAN.md`
+7. anschließend die konkret betroffenen Quell- und Konfigurationsdateien
 
 Repository: `RWollAurea/venus-os_dbus-serialbattery`  
-Standardbranch: `master`
+Upstream-/Standardbranch: `master`  
+Aktiver Entwicklungsbranch: `ecs-bmv-integration`
 
-Bei Beginn eines neuen Chats oder einer neuen Arbeitssitzung zuerst lesen:
-
-1. `AGENTS.md`
-2. `docs/PROJECT_STATE.md`
-3. `docs/VENUS_DEPLOYMENT.md`
-4. danach erst die konkret betroffenen Quell- und Konfigurationsdateien
+Entwicklungsänderungen gehören auf `ecs-bmv-integration`. `master` bleibt möglichst nahe am Upstream `mr-manuel/venus-os_dbus-serialbattery`.
 
 ## Projektziel
 
-Ein Batteriesystem aus
+Integration von:
 
-- ECS LiPro1-6 Active Version 1.0 mit RS485/Modbus RTU,
-- Victron BMV-712 Smart,
-- Victron Venus GX / Venus OS,
+- ECS LiPro1-6 Active Version 1.0 über RS485/Modbus RTU
+- Victron BMV-712 Smart über VE.Direct/D-Bus
+- Victron Venus GX mit Venus OS
 - dbus-serialbattery
 
-soll so integriert werden, dass Venus OS eine nutzbare, ESS-/DVCC-taugliche Batterie sieht.
+Venus OS soll eine ESS-/DVCC-taugliche kombinierte Batterie sehen.
 
 Datenquellen:
 
-- **ECS:** Zellspannungen, Temperaturen, OVP, LVP, Betriebs-/Fehlerstatus und Zellschutz
-- **BMV-712:** Gesamtspannung, Strom und SoC
+- ECS: Zellspannung, Temperatur, Status, OVP, LVP und Zellschutz
+- BMV-712: Gesamtspannung, Strom und SoC
 
-Der ECS-Zellschutz ist maßgeblich. BMV-Werte dürfen Schutzentscheidungen des ECS nicht übersteuern.
+ECS bleibt für den Zellschutz maßgeblich. BMV-Werte dürfen ECS-Schutzentscheidungen niemals übersteuern.
 
-## Wichtige Abgrenzung
+## Aktuelle projektspezifische Dateien
 
-Der projektspezifische Treiber heißt `ecs_bmv.py` und die vorgesehene Klasse heißt `EcsBmvBattery`.
+- Treiber: `dbus-serialbattery/bms/ecs_bmv.py`
+- Klasse: `EcsBmv`
+- Loader: `dbus-serialbattery/dbus-serialbattery.py`
+- Roh-Modbus-Test: `dbus-serialbattery/tools/test_ecs_modbus_raw.py`
+- Projektkonfiguration: `dbus-serialbattery/projekt-config/config.ini`
+- Serial-Starter-Beispiel: `dbus-serialbattery/projekt-config/serial-starter.d/dbus-serialbattery.conf`
 
-Der vorhandene Upstream-Treiber `dbus-serialbattery/bms/ecs.py` gehört zu einer anderen ECS-/GreenView-/GreenMeter-Integration und darf nicht mit `ecs_bmv.py` verwechselt werden.
+Historische Bezeichnungen wie `EcsBmvBattery` und der Pfad `/data/etc/dbus-serialbattery/batteries/ecs_bmv.py` sind nicht mehr der aktuelle Repository-Stand.
 
-Vor Änderungen immer den tatsächlichen Pfad des projektspezifischen Treibers im Repository und auf dem Venus GX feststellen. Historisch wurde auf dem Gerät folgender Pfad verwendet:
+Der vorhandene Upstream-Treiber `dbus-serialbattery/bms/ecs.py` ist eine andere ECS-/GreenView-Integration und darf nicht mit `ecs_bmv.py` verwechselt werden.
 
-`/data/etc/dbus-serialbattery/batteries/ecs_bmv.py`
+## Systempfade auf dem Venus GX
 
-Die aktuelle Upstream-Struktur verwendet dagegen `dbus-serialbattery/bms/`. Diese Abweichung ist vor jeder Import- oder Loader-Änderung ausdrücklich zu prüfen und darf nicht stillschweigend umgebaut werden.
+- Hauptinstallation: `/opt/victronenergy/dbus-serialbattery/`
+- Persistente Konfiguration: `/data/etc/dbus-serialbattery/`
+- Serial-Starter: `/data/conf/serial-starter.d/dbus-serialbattery.conf`
+- Logs: `/data/log/dbus-serialbattery*/current`
 
-## Systempfade
+## Verbindliche Arbeitsregeln
 
-Hauptinstallation auf dem GX:
-
-`/opt/victronenergy/dbus-serialbattery/`
-
-Persistente eigene Anpassungen:
-
-`/data/etc/dbus-serialbattery/`
-
-Serial-Starter-Konfiguration:
-
-`/data/conf/serial-starter.d/dbus-serialbattery.conf`
-
-Typische Logs:
-
-`/data/log/dbus-serialbattery*/current`
-
-## Arbeitsregeln
-
-- Keine Architekturänderung, Neuinstallation, größere Umstrukturierung, Watchdog-Änderung oder Refaktorierung ohne ausdrücklichen Auftrag.
-- Keine Dateien, Commits, Branches oder Pull Requests ohne ausdrückliche Freigabe des Nutzers ändern bzw. erstellen.
-- Vor jeder Codeänderung aktuellen Branch, Commit, betroffene Dateien und den tatsächlich auf dem GX laufenden Stand prüfen.
-- Repository-Datei und GX-Datei nicht automatisch als identisch annehmen.
-- Änderungen minimal halten und exakt auf die festgestellte Ursache begrenzen.
-- Keine neuen Features ergänzen, solange der aktuelle Fehler nicht sauber eingegrenzt ist.
-- Bei mehreren Lösungswegen Varianten kurz bewerten, eine Empfehlung aussprechen und vor größeren Änderungen Freigabe abwarten.
+- Keine Architekturänderung, Neuinstallation oder größere Refaktorierung ohne ausdrücklichen Auftrag.
+- Vor jeder Änderung Branch, Commit, betroffene Datei und den tatsächlich auf dem GX laufenden Stand prüfen.
+- Repository-Datei und GX-Datei nie ungeprüft als identisch annehmen.
+- Änderungen minimal und ursachenbezogen halten.
+- Keine neuen Funktionen ergänzen, solange der aktuelle Fehler nicht sauber eingegrenzt ist.
+- Bei mehreren Lösungswegen Varianten bewerten, eine Empfehlung geben und vor größeren Änderungen Freigabe abwarten.
+- Vor Repository-Schreibvorgängen die Datei erneut lesen und die aktuelle Blob-SHA verwenden.
+- Keine Secrets, Tokens, Schlüssel oder privaten Zugangsdaten einchecken.
 
 ## Quellenpriorität
 
-Bei widersprüchlichen Angaben gilt:
+Bei Widersprüchen gilt:
 
-1. aktuell gemessene Rohdaten des realen ECS-Systems,
-2. aktuell auf dem Venus GX laufender Quellcode und aktuelle Konfiguration,
-3. projektspezifische Dokumentation in diesem Repository,
-4. ECS-Dokumentation der exakt eingesetzten Hardwareversion,
-5. allgemeine dbus-serialbattery- und Victron-Dokumentation,
-6. Annahmen oder Erfahrungswerte.
+1. aktuelle Rohmessung am realen ECS-System
+2. tatsächlich auf dem Venus GX laufender Code und aktive Konfiguration
+3. projektspezifische Dokumentation in diesem Branch
+4. Dokumentation der exakt eingesetzten ECS-Hardwareversion
+5. Upstream-/Victron-Dokumentation
+6. Annahmen und Erfahrungswerte
 
-Registerangaben verschiedener ECS-Generationen dürfen nicht ungeprüft vermischt werden.
+Registerangaben unterschiedlicher ECS-Generationen dürfen nicht vermischt werden.
 
 ## Debug-Reihenfolge
 
-Vor Änderungen am dbus-serialbattery-Ablauf in dieser Reihenfolge prüfen:
+1. richtiger serieller Port und stabile By-ID-Zuordnung
+2. kein Ausschluss durch `EXCLUDED_DEVICES`
+3. Import von `bms.ecs_bmv`
+4. Registrierung von `EcsBmv` in `supported_bms_types`
+5. Erreichen von `EcsBmv.test_connection()`
+6. Baudrate, 8E1, Slave-ID und Verkabelung
+7. Minimaltest Register 7
+8. Registerblock und Skalierung
+9. eindeutige BMV-Service-Erkennung
+10. nicht blockierende Übernahme von BMV-Spannung, Strom und SoC
+11. D-Bus-Mapping
+12. ESS-/DVCC-Verhalten und Fail-safe-Tests
 
-1. Wird der richtige serielle Port an den Prozess übergeben?
-2. Ist der Port durch `EXCLUDED_DEVICES` ausgeschlossen?
-3. Wird das Modul mit `ecs_bmv.py` tatsächlich importiert?
-4. Ist `EcsBmvBattery` in der verwendeten Loader-/Treiberliste registriert?
-5. Wird `test_connection()` erreicht?
-6. Stimmen Port, Baudrate, Parität, Stopbits und Slave-ID?
-7. Funktioniert der Minimaltest auf ECS-Register 7?
-8. Stimmen Registermapping und Skalierung?
-9. Wird der BMV-D-Bus-Service eindeutig erkannt?
-10. Erst danach D-Bus-Mapping sowie ESS-/DVCC-Verhalten prüfen.
+## Bestätigter bzw. aktueller Protokollstand
 
-## Bekannte Protokollfakten
+- Modbus RTU
+- 19200 Baud
+- aktuelle Implementierung: 8E1
+- Register 7: Zellspannung in mV
+- Register 8: Temperaturrohwert; aktuelle Formel `raw / 10 - 60` °C, real weiter verifizieren
+- Register 13: Betriebs-/Fehlerstatus
+- Register 14: LVP
+- Register 15: OVP
+- Register 28: Slave-Adresse
+- Register 30: EEPROM-Speicherbestätigung
+- aktueller Treiber: Slave-IDs 1, 2, 3, 4
+- historisch genannt: 100, 200, 300, 400
 
-- ECS LiPro1-6 Active Version 1.0 verwendet Modbus RTU über RS485.
-- Dokumentierte Werkseinstellung: 19200 Baud.
-- Parität, Stopbits und Slave-ID müssen am realen System bestätigt werden.
-- Register 7: Zellspannung in mV.
-- Register 8: Temperaturrohwert; Umrechnung muss anhand realer Vergleichswerte bestätigt werden.
-- Register 13: Betriebs-/Fehlerstatus.
-- Register 14: LVP-Zustand.
-- Register 15: OVP-Zustand.
-- Register 28: Slave-Adresse.
-- Register 30: EEPROM-Speicherbestätigung.
-- Einzelne LiPro-Module können gegebenenfalls auf Adresse 0 reagieren.
-- Frühere Adressen im Projekt waren 100, 200, 300 und 400.
-- Bei Modbus Exception 02 funktioniert die Kommunikation grundsätzlich; Registeradresse oder Registeranzahl ist dann ungültig.
+Diese Adressabweichung ist offen und muss am realen System bestätigt werden.
 
 ## BMV-D-Bus
 
-Vor dem Zugriff zuerst vorhandene Services `com.victronenergy.battery.*` auflisten und den BMV eindeutig identifizieren.
+Vor einer festen Zuordnung alle `com.victronenergy.battery.*` Services erfassen und den BMV über Produktname, Verbindung, DeviceInstance und verfügbare Pfade eindeutig identifizieren.
 
-Vorgesehene Werte:
+Benötigte Werte:
 
 - `/Dc/0/Voltage`
 - `/Dc/0/Current`
 - `/Soc`
 
-Fehler beim Lesen des BMV dürfen den ECS-Modbus-Test nicht verdecken.
+Die BMV-Abfrage ist im aktuellen Treiber noch deaktiviert. Strom `0.0 A` und SoC `50 %` sind nur Entwicklungsplatzhalter und dürfen nicht als produktiver Endstand behandelt werden.
 
 ## Sicherheitsregeln
 
-- OVP muss die Ladefreigabe bzw. den zulässigen Ladestrom beeinflussen.
-- LVP muss die Entladefreigabe bzw. den zulässigen Entladestrom beeinflussen.
+- OVP muss Laden sperren bzw. CCL sicher reduzieren.
+- LVP muss Entladen sperren bzw. DCL sicher reduzieren.
 - Temperaturfehler müssen sicher behandelt werden.
-- Bei ECS-Kommunikationsverlust darf der Treiber nicht optimistisch Laden und Entladen freigeben.
-- Ein Kommunikationsfehler darf nicht durch alte, noch gültig wirkende Messwerte verdeckt werden.
-- ESS-/DVCC-relevante Annahmen zu CVL, CCL, DCL, Charge-Allow und Discharge-Allow müssen ausdrücklich dokumentiert werden.
+- ECS-Kommunikationsverlust darf nie zu optimistischer Lade-/Entladefreigabe führen.
+- Alte Messwerte müssen als veraltet erkannt werden.
 - Physische ECS-Sicherheitsschleifen bleiben unabhängig von der Software maßgeblich.
+- ESS-/DVCC-Annahmen zu CVL, CCL, DCL und Freigaben müssen ausdrücklich dokumentiert und getestet werden.
 
-## Anforderungen an Codeänderungen
+## Anforderungen an jede Codeänderung
 
-Jede vorgeschlagene oder ausgeführte Codeänderung muss enthalten:
+Immer angeben:
 
-- vollständiger Repository-Pfad,
-- zugehöriger Pfad auf dem Venus GX,
-- konkretes Snippet oder vollständige Datei,
-- Begründung auf Basis des festgestellten Fehlers,
-- Test- und Verifikationsschritte,
-- relevante Logpfade,
-- erwartete Logausgaben,
-- mögliche Auswirkungen auf ESS, DVCC und VE.Bus,
-- Rollback-Schritte.
+- Repository-Pfad
+- Zielpfad auf dem GX
+- vollständiges Snippet oder vollständige Datei
+- Begründung
+- Testschritte
+- relevante Logpfade
+- erwartete Logausgaben
+- mögliche ESS-/DVCC-/VE.Bus-Auswirkungen
+- Rollback
 
-## Standardtests auf Venus OS
+## Standardtests
 
 ```sh
 dmesg | grep ttyUSB
@@ -160,32 +156,24 @@ ls -l /dev/ttyUSB*
 ls -l /dev/serial/by-id/
 svc -t /service/dbus-serialbattery*
 tail -f /data/log/dbus-serialbattery*/current
-grep -i ecs /data/log/dbus-serialbattery*/current
+grep -iE 'ecs|bmv|exception|traceback|error|testing' /data/log/dbus-serialbattery*/current
 ```
 
-Zusätzlich je nach Stand:
+Zusätzlich nach Bedarf:
 
 - `dbus-spy`
 - `dbus-monitor`
-- vorhandene `com.victronenergy.battery.*` Services prüfen
-- ECS-Register 7 einzeln lesen
+- Batterie-Services auflisten
+- Register 7 einzeln lesen
 
-## Repository- und Commit-Regeln
+## Abschluss einer Sitzung
 
-- Standardmäßig direkt auf `master` nur arbeiten, wenn der Nutzer dies ausdrücklich beauftragt.
-- Vor einem Schreibvorgang die aktuelle Datei erneut lesen und deren Blob-SHA verwenden.
-- Änderungen an derselben Datei nicht parallel schreiben.
-- Commit-Nachrichten kurz und eindeutig halten.
-- Nach einem Commit den Commit-SHA nennen.
-- Keine Zugangsdaten, WLAN-Schlüssel, VRM-Tokens, private Schlüssel oder sonstige Secrets einchecken.
+Nach jeder relevanten Diagnose oder Änderung `docs/PROJECT_STATE.md` aktualisieren:
 
-## Abschluss einer Arbeitssitzung
-
-Nach einer relevanten Änderung oder neuen Diagnose `docs/PROJECT_STATE.md` aktualisieren:
-
-- aktueller Fehlerstand,
-- bestätigte Erkenntnisse,
-- verworfene Annahmen,
-- letzter erfolgreicher Test,
-- nächster minimaler Schritt,
-- Rollback-Punkt.
+- Branch und Commit
+- aktueller Fehlerstand
+- bestätigte Erkenntnisse
+- verworfene Annahmen
+- letzter erfolgreicher Test
+- nächster minimaler Schritt
+- Rollback-Punkt

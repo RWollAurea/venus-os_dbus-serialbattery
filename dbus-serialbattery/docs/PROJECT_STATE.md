@@ -5,153 +5,164 @@ Stand: 2026-07-15
 ## Repository
 
 - Repository: `RWollAurea/venus-os_dbus-serialbattery`
-- Standardbranch: `master`
-- Letzter von ChatGPT gelesener Commit auf `master`: `5842e4414a9c55a4ab311c54261f8e9c870fb36f`
-- Upstream-Herkunft: Fork des Projekts `mr-manuel/venus-os_dbus-serialbattery`
-- Projektspezifische Dateien `ecs_bmv.py` und `test_ecs_modbus_raw.py`: im Standardbranch durch den GitHub-Zugriff derzeit noch nicht auffindbar; Pfad und Commit müssen bestätigt werden.
+- Upstream-/Standardbranch: `master`
+- Aktiver Entwicklungsbranch: `ecs-bmv-integration`
+- Upstream-Basis: `5842e4414a9c55a4ab311c54261f8e9c870fb36f`
+- Upstream-Herkunft: Fork von `mr-manuel/venus-os_dbus-serialbattery`
+- Schreibzugriff über den ChatGPT Codex Connector ist bestätigt.
 
 ## Zielsystem
 
 - Gerät: Victron Venus GX
 - Venus OS: v3.71
-- dbus-serialbattery Hauptinstallation:
-  `/opt/victronenergy/dbus-serialbattery/`
-- Persistente eigene Anpassungen:
-  `/data/etc/dbus-serialbattery/`
-- Historischer eigener Treiber:
-  `/data/etc/dbus-serialbattery/batteries/ecs_bmv.py`
-- Treiberklasse:
-  `EcsBmvBattery`
+- Hauptinstallation: `/opt/victronenergy/dbus-serialbattery/`
+- Persistente Konfiguration: `/data/etc/dbus-serialbattery/`
 - BMV-712 per VE.Direct am GX
 - ECS LiPro1-6 Active Version 1.0 per USB-RS485 am GX
+- FTDI-Adapter laut Projektkonfiguration:
+  `/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AG0KG1HS-if00-port0`
 
-## Architektur
+## Aktuelle projektspezifische Dateien
 
-Der kombinierte Battery-Service soll folgende Quellen verwenden:
+- `dbus-serialbattery/bms/ecs_bmv.py`
+- `dbus-serialbattery/tools/test_ecs_modbus_raw.py`
+- `dbus-serialbattery/dbus-serialbattery.py`
+- `dbus-serialbattery/projekt-config/config.ini`
+- `dbus-serialbattery/projekt-config/serial-starter.d/dbus-serialbattery.conf`
+- `dbus-serialbattery/AGENTS.md`
+- `dbus-serialbattery/docs/VENUS_DEPLOYMENT.md`
+- `dbus-serialbattery/docs/ECS_MODBUS.md`
+- `dbus-serialbattery/docs/DBUS_MAPPING.md`
+- `dbus-serialbattery/docs/TEST_PLAN.md`
+- `dbus-serialbattery/docs/SYSTEM_PROMPT.md`
 
-| Zielwert/Funktion | Quelle |
-|---|---|
-| Gesamtspannung | BMV-712 `/Dc/0/Voltage` |
-| Strom | BMV-712 `/Dc/0/Current` |
-| SoC | BMV-712 `/Soc` |
-| Zellspannungen | ECS Modbus |
-| Temperatur | ECS Modbus |
-| OVP | ECS Modbus |
-| LVP | ECS Modbus |
-| Schutz-/Fehlerstatus | ECS Modbus |
-| Ladefreigabe | ECS maßgeblich |
-| Entladefreigabe | ECS maßgeblich |
+## Aktuelle Treiberintegration
 
-Der BMV ist kein vollständiges BMS. ECS bleibt für den Zellschutz maßgeblich.
+Treiber:
 
-## Bestätigte ECS-Informationen
+`dbus-serialbattery/bms/ecs_bmv.py`
 
-- Protokoll: Modbus RTU
-- Werkseinstellung laut ECS-Dokumentation: 19200 Baud
+Klasse:
+
+`EcsBmv`
+
+Der Entwicklungsbranch importiert den Treiber im Loader mit:
+
+```python
+from bms.ecs_bmv import EcsBmv
+```
+
+und registriert ihn mit 19200 Baud in `supported_bms_types`.
+
+Damit sind Import und explizite Registrierung im Repository grundsätzlich vorhanden.
+
+## Aktuelle Treiberfunktion
+
+Der Treiber verwendet derzeit:
+
+- Modbus RTU
+- 19200 Baud
+- 8 Datenbits, gerade Parität, 1 Stopbit
+- Slave-IDs 1, 2, 3 und 4
+- Registerblock 7 bis 15
+- vollständigen Snapshot aller vier Slaves
+- Fail-safe bei unvollständigem ECS-Snapshot:
+  - CCL = 0
+  - DCL = 0
+  - `charge_fet = False`
+  - `discharge_fet = False`
+
+Registerauswertung:
+
 - Register 7: Zellspannung in mV
-- Register 8: Temperaturrohwert; endgültige Umrechnung noch verifizieren
-- Register 13: Betriebs-/Fehlerstatus
+- Register 8: Temperatur als `raw / 10 - 60` °C
+- Register 13: Status
 - Register 14: LVP
 - Register 15: OVP
-- Register 28: Slave-Adresse
-- Register 30: EEPROM-Speicherbestätigung
-- Frühere Adressen: 100, 200, 300, 400
-- Hinweis: einzelne Module können gegebenenfalls auf Adresse 0 reagieren
-- Minimaltest: zunächst ausschließlich Register 7 lesen
 
-## Aktuell bekannte Hardware-/Busbesonderheiten
+## Noch nicht erreichter Endstand
 
-- USB-Ports können als `/dev/ttyUSB0` bis `/dev/ttyUSB3` erscheinen.
-- Stabile Zuordnung soll über `/dev/serial/by-id/` erfolgen.
-- Die galvanisch getrennte RS485-Schnittstelle benötigt eine passende Versorgung; ohne die benötigte Versorgung wurden in früheren Tests nur `0x00`-Antworten beobachtet.
-- Bei Timeout prüfen:
-  - falscher Port,
-  - A/B vertauscht,
-  - fehlender GND,
-  - fehlende Versorgung,
-  - falsche Slave-ID,
-  - falsche Parität oder Baudrate,
-  - Port durch anderen Prozess belegt.
-- Modbus Exception 02 bedeutet: Kommunikation funktioniert grundsätzlich, Registeradresse oder Registeranzahl ist jedoch ungültig.
+Die BMV-Abfrage ist in `refresh_data()` noch deaktiviert.
 
-## Aktueller Softwarestand
+Aktuelle Platzhalter:
 
-Der Upstream-Startpunkt im Repository befindet sich unter:
+- Strom: `0.0 A`
+- SoC: `50 %`
 
-`dbus-serialbattery/dbus-serialbattery.py`
+Die Gesamtspannung wird derzeit aus der Summe der ECS-Zellspannungen gebildet. Das entspricht noch nicht dem Projektziel, nach dem Gesamtspannung, Strom und SoC vom BMV-712 kommen sollen.
 
-Die aktuell gelesene Version:
+## Kritischer Loader-Hinweis
 
-- importiert den vorhandenen Upstream-Treiber `from bms.ecs import Ecs`,
-- registriert diesen mit 19200 Baud in `supported_bms_types`,
-- kennt in der gelesenen Fassung keinen Import von `ecs_bmv.py`,
-- erwartet reguläre Treiber in der Paketstruktur `dbus-serialbattery/bms/`.
+Die Datei `dbus-serialbattery/dbus-serialbattery.py` im Entwicklungsbranch unterscheidet sich stark von der aktuellen `master`-Version.
 
-Historisch lag der projektspezifische Treiber dagegen unter:
+Beim letzten Vergleich wurden gegenüber `master` ungefähr 97 Zeilen hinzugefügt und 318 Zeilen entfernt.
 
-`/data/etc/dbus-serialbattery/batteries/ecs_bmv.py`
+Das deutet darauf hin, dass eine ältere oder vom GX übernommene Loader-Version in den Branch gelangt ist. Vor einem produktiven Deployment muss die ECS-BMV-Integration in die aktuelle `master`-Version übertragen werden. Zieländerungen am Loader sind nur:
 
-Damit besteht eine noch zu klärende Abweichung zwischen:
+```python
+from bms.ecs_bmv import EcsBmv
+```
 
-- historischer eigener `batteries`-/`BasicBattery`-Struktur,
-- aktueller Upstream-`bms`-/`Battery`-Struktur.
+und:
 
-Vor einer weiteren Loader-Änderung muss der aktuelle Inhalt von `ecs_bmv.py` vollständig gelesen werden.
+```python
+{"bms": EcsBmv, "baud": 19200},
+```
 
-## Letztes bekanntes Problem
+Weitere Loader-Abweichungen müssen separat begründet werden.
 
-Der eigene Treiber wurde vom Python-Prozess nicht geladen beziehungsweise nicht getestet.
+## Konfigurationsstand
 
-Beobachtung:
+Die Projektkonfiguration soll für den gezielten Test verwenden:
 
-- Im Log erschien `Testing Ecs`.
-- Eigene Logausgaben aus `ecs_bmv.py` erschienen nicht.
-- `test_connection()` der eigenen Klasse wurde nicht erreicht.
+```ini
+BMS_TYPE = EcsBmv
+AUTO_DETECT_BMS = False
+BLOCK_ON_DISCONNECT = True
+```
 
-Frühere Ursache:
+Der verwendete By-ID-Port darf nicht gleichzeitig durch `EXCLUDED_DEVICES` ausgeschlossen werden.
 
-- `/data/etc/dbus-serialbattery` lag nicht im `sys.path`.
-- `BasicBattery.__subclasses__()` konnte nur bereits importierte Klassen sehen.
-- Ein früherer Importversuch endete mit:
-  `ModuleNotFoundError: No module named 'batteries'`
+## Offene technische Punkte
 
-Wichtig: Der aktuell im Repository gelesene Upstream-Loader arbeitet nicht über `BasicBattery.__subclasses__()`, sondern über eine explizite Liste `supported_bms_types`. Der aktuelle projektspezifische Code muss deshalb vor dem nächsten Fix gegen die tatsächlich verwendete Version abgeglichen werden.
-
-## Offene Punkte mit Priorität
-
-1. Pfad und Commit von `ecs_bmv.py` im Repository bestätigen.
-2. Pfad und Commit von `test_ecs_modbus_raw.py` im Repository bestätigen.
-3. Aktuellen Inhalt beider Dateien vollständig prüfen.
-4. Feststellen, ob `ecs_bmv.py` von `Battery`, `BasicBattery` oder einer anderen Basisklasse erbt.
-5. Aktuell auf dem GX laufende `dbus-serialbattery.py` mit dem Repository vergleichen.
-6. Serial-Starter-Konfiguration und tatsächlich übergebenen Port dokumentieren.
-7. Modbus-Parameter Parität, Stopbits und Slave-ID am realen Gerät bestätigen.
-8. BMV-D-Bus-Service eindeutig erfassen.
-9. Erst danach das ESS-/DVCC-Mapping festlegen.
+1. Loader auf aktuelle `master`-Basis bringen.
+2. Slave-IDs am realen System bestätigen. Aktueller Code: 1 bis 4; historisch genannt: 100, 200, 300, 400.
+3. Temperaturformel anhand realer Vergleichswerte bestätigen.
+4. Statusregister 13 bitgenau dokumentieren.
+5. Semantik der Werte in Register 14 und 15 bestätigen.
+6. BMV-Service dynamisch und eindeutig erkennen.
+7. Nicht blockierende Übernahme von BMV-Spannung, Strom und SoC implementieren.
+8. Kommunikationsalter/Staleness für ECS und BMV definieren.
+9. CVL, CCL und DCL fachlich für ESS/DVCC festlegen.
+10. OVP-, LVP-, Temperatur- und Kommunikationsverlusttests durchführen.
+11. Verhalten nach USB-Trennung, Wiederanstecken und GX-Neustart testen.
 
 ## Nächster minimaler Arbeitsschritt
 
-Nicht erneut am Importmechanismus ändern, bevor folgende Daten vorliegen:
+1. Aktuelle Loader-Datei aus `master` als Grundlage verwenden.
+2. Nur Import und Registrierung von `EcsBmv` übernehmen.
+3. Projektkonfiguration mit `BMS_TYPE = EcsBmv` verwenden.
+4. Roh-Modbus-Test auf Register 7 für jeden realen Slave ausführen.
+5. Erst danach `EcsBmv.test_connection()` über den Service testen.
 
-```sh
-cd /opt/victronenergy/dbus-serialbattery
-git rev-parse HEAD 2>/dev/null || true
+## Erwartete Logfolge
 
-find /data/etc/dbus-serialbattery -maxdepth 3 -type f -print
-grep -R "class EcsBmvBattery" -n /data/etc/dbus-serialbattery /opt/victronenergy/dbus-serialbattery 2>/dev/null
-grep -R "ecs_bmv" -n /data/etc/dbus-serialbattery /opt/victronenergy/dbus-serialbattery 2>/dev/null
-
-cat /data/conf/serial-starter.d/dbus-serialbattery.conf
-ls -l /dev/ttyUSB* /dev/serial/by-id/* 2>/dev/null
+```text
+Starting dbus-serialbattery
+Testing EcsBmv
+ECS_BMV: __init__
+ECS_BMV: test_connection start
+ECS_BMV: test_connection ok
+Connection established to EcsBmv
 ```
 
-Danach Repository-Datei und GX-Datei inhaltlich vergleichen.
+`Testing Ecs` bezeichnet nur den getrennten Upstream-Treiber `bms.ecs.Ecs`.
 
 ## Sicherheitsstatus
 
-Noch nicht als produktionsreif einstufen.
+Noch nicht produktionsreif.
 
-Bis zur vollständigen Abbildung von ECS-Kommunikationsverlust, OVP, LVP und Temperaturfehlern darf der kombinierte Service nicht als alleinige Schutzinstanz betrachtet werden. Die physischen ECS-Sicherheitsschleifen bleiben maßgeblich.
+Die physischen ECS-Sicherheitsschleifen bleiben maßgeblich. Der kombinierte D-Bus-Service darf erst nach erfolgreichem Test von Kommunikationsverlust, OVP, LVP, Temperaturfehlern und BMV-Ausfall für ESS/DVCC eingesetzt werden.
 
 ## Rollback
 
@@ -161,8 +172,4 @@ Vor jeder Änderung auf dem GX:
 cp -a DATEI DATEI.bak-$(date +%Y%m%d-%H%M%S)
 ```
 
-Bei Repository-Änderungen den vorherigen Commit-SHA hier dokumentieren.
-
-Aktueller dokumentierter Ausgangs-Commit:
-
-`5842e4414a9c55a4ab311c54261f8e9c870fb36f`
+Vor jeder Repository-Änderung aktuellen Branch und Commit dokumentieren.

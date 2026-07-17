@@ -1,6 +1,6 @@
 # Projektstand: Victron BMV-712 + ECS LiPro als BMS
 
-Stand: 2026-07-15
+Stand: 2026-07-17
 
 ## Repository
 
@@ -9,7 +9,7 @@ Stand: 2026-07-15
 - Aktiver Entwicklungsbranch: `ecs-bmv-integration`
 - Upstream-Basis: `5842e4414a9c55a4ab311c54261f8e9c870fb36f`
 - Upstream-Herkunft: Fork von `mr-manuel/venus-os_dbus-serialbattery`
-- Schreibzugriff über den ChatGPT Codex Connector ist bestätigt.
+- Verifizierter Repository-Stand nach Loader-Korrektur und Workflow-Bereinigung: `d0f0302f5628e667a096ded17f7a3dbb13e36b08`
 
 ## Zielsystem
 
@@ -52,9 +52,36 @@ Der Entwicklungsbranch importiert den Treiber im Loader mit:
 from bms.ecs_bmv import EcsBmv
 ```
 
-und registriert ihn mit 19200 Baud in `supported_bms_types`.
+und registriert ihn mit 19200 Baud:
 
-Damit sind Import und explizite Registrierung im Repository grundsätzlich vorhanden.
+```python
+{"bms": EcsBmv, "baud": 19200},
+```
+
+## Loader-Stand
+
+`dbus-serialbattery/dbus-serialbattery.py` basiert wieder vollständig auf der aktuellen Datei aus `master`.
+
+Gegenüber `master` enthält der Loader ausschließlich zwei zusätzliche Zeilen:
+
+```python
+from bms.ecs_bmv import EcsBmv
+```
+
+und:
+
+```python
+{"bms": EcsBmv, "baud": 19200},
+```
+
+Bestätigte Prüfungen:
+
+- Diff `master...ecs-bmv-integration`: Loader `2 additions`, `0 deletions`
+- `EcsBmv`-Import genau einmal vorhanden
+- `EcsBmv`-Registrierung genau einmal vorhanden
+- alter Override `sys.path.insert(0, "/data/etc/dbus-serialbattery")` entfernt
+- `python3 -m py_compile dbus-serialbattery/dbus-serialbattery.py` erfolgreich
+- temporärer Wiederherstellungs-Workflow nach erfolgreicher Ausführung entfernt
 
 ## Aktuelle Treiberfunktion
 
@@ -91,26 +118,6 @@ Aktuelle Platzhalter:
 
 Die Gesamtspannung wird derzeit aus der Summe der ECS-Zellspannungen gebildet. Das entspricht noch nicht dem Projektziel, nach dem Gesamtspannung, Strom und SoC vom BMV-712 kommen sollen.
 
-## Kritischer Loader-Hinweis
-
-Die Datei `dbus-serialbattery/dbus-serialbattery.py` im Entwicklungsbranch unterscheidet sich stark von der aktuellen `master`-Version.
-
-Beim letzten Vergleich wurden gegenüber `master` ungefähr 97 Zeilen hinzugefügt und 318 Zeilen entfernt.
-
-Das deutet darauf hin, dass eine ältere oder vom GX übernommene Loader-Version in den Branch gelangt ist. Vor einem produktiven Deployment muss die ECS-BMV-Integration in die aktuelle `master`-Version übertragen werden. Zieländerungen am Loader sind nur:
-
-```python
-from bms.ecs_bmv import EcsBmv
-```
-
-und:
-
-```python
-{"bms": EcsBmv, "baud": 19200},
-```
-
-Weitere Loader-Abweichungen müssen separat begründet werden.
-
 ## Konfigurationsstand
 
 Die Projektkonfiguration soll für den gezielten Test verwenden:
@@ -125,7 +132,7 @@ Der verwendete By-ID-Port darf nicht gleichzeitig durch `EXCLUDED_DEVICES` ausge
 
 ## Offene technische Punkte
 
-1. Loader auf aktuelle `master`-Basis bringen.
+1. Tatsächlich auf dem GX laufenden Loader und die Basisdateien gegen den Repository-Stand vergleichen.
 2. Slave-IDs am realen System bestätigen. Aktueller Code: 1 bis 4; historisch genannt: 100, 200, 300, 400.
 3. Temperaturformel anhand realer Vergleichswerte bestätigen.
 4. Statusregister 13 bitgenau dokumentieren.
@@ -139,11 +146,10 @@ Der verwendete By-ID-Port darf nicht gleichzeitig durch `EXCLUDED_DEVICES` ausge
 
 ## Nächster minimaler Arbeitsschritt
 
-1. Aktuelle Loader-Datei aus `master` als Grundlage verwenden.
-2. Nur Import und Registrierung von `EcsBmv` übernehmen.
-3. Projektkonfiguration mit `BMS_TYPE = EcsBmv` verwenden.
-4. Roh-Modbus-Test auf Register 7 für jeden realen Slave ausführen.
-5. Erst danach `EcsBmv.test_connection()` über den Service testen.
+1. GX-Laufzeitstand read-only gegen Repository vergleichen.
+2. Projektkonfiguration mit `BMS_TYPE = EcsBmv` verwenden.
+3. Roh-Modbus-Test auf Register 7 für jeden realen Slave ausführen.
+4. Erst danach `EcsBmv.test_connection()` über den Service testen.
 
 ## Erwartete Logfolge
 
@@ -166,10 +172,14 @@ Die physischen ECS-Sicherheitsschleifen bleiben maßgeblich. Der kombinierte D-B
 
 ## Rollback
 
+Repository-Rollback des Loader-Stands:
+
+```sh
+git checkout master -- dbus-serialbattery/dbus-serialbattery.py
+```
+
 Vor jeder Änderung auf dem GX:
 
 ```sh
 cp -a DATEI DATEI.bak-$(date +%Y%m%d-%H%M%S)
 ```
-
-Vor jeder Repository-Änderung aktuellen Branch und Commit dokumentieren.

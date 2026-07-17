@@ -1,12 +1,11 @@
-# Triggered through a merged pull request so the target-branch push event runs.
 name: Restore ECS loader to master base
 
 on:
-  push:
+  pull_request:
     branches:
       - ecs-bmv-integration
-    paths:
-      - .github/workflows/restore-ecs-loader.yml
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,157 +14,39 @@ jobs:
   restore-loader:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out development branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ecs-bmv-integration
           fetch-depth: 0
 
-      - name: Restore loader and keep only ECS-BMV integration
+      - name: Restore master loader and add only EcsBmv
         shell: bash
         run: |
           set -euo pipefail
           git fetch origin master
           git checkout origin/master -- dbus-serialbattery/dbus-serialbattery.py
-
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('dbus-serialbattery/dbus-serialbattery.py')
           text = path.read_text(encoding='utf-8')
-
           import_anchor = 'from bms.ecs import Ecs\n'
           import_line = 'from bms.ecs_bmv import EcsBmv\n'
           registration_anchor = '    {"bms": Ecs, "baud": 19200},\n'
           registration_line = '    {"bms": EcsBmv, "baud": 19200},\n'
-
-          if import_line not in text:
-              if import_anchor not in text:
-                  raise SystemExit('Ecs import anchor not found')
-              text = text.replace(import_anchor, import_anchor + import_line, 1)
-
-          if registration_line not in text:
-              if registration_anchor not in text:
-                  raise SystemExit('Ecs registration anchor not found')
-              text = text.replace(registration_anchor, registration_anchor + registration_line, 1)
-
-          if text.count(import_line) != 1:
-              raise SystemExit('EcsBmv import count is not exactly one')
-          if text.count(registration_line) != 1:
-              raise SystemExit('EcsBmv registration count is not exactly one')
-          if 'sys.path.insert(0, "/data/etc/dbus-serialbattery")' in text:
-              raise SystemExit('Obsolete /data path override is still present')
-
+          text = text.replace(import_anchor, import_anchor + import_line, 1)
+          text = text.replace(registration_anchor, registration_anchor + registration_line, 1)
+          assert text.count(import_line) == 1
+          assert text.count(registration_line) == 1
+          assert 'sys.path.insert(0, "/data/etc/dbus-serialbattery")' not in text
           path.write_text(text, encoding='utf-8')
           PY
-
           python3 -m py_compile dbus-serialbattery/dbus-serialbattery.py
-
           DIFF="$(git diff --unified=0 origin/master -- dbus-serialbattery/dbus-serialbattery.py)"
           printf '%s\n' "$DIFF"
           test "$(printf '%s\n' "$DIFF" | grep -c '^+from bms.ecs_bmv import EcsBmv$')" -eq 1
           test "$(printf '%s\n' "$DIFF" | grep -c '^+    {"bms": EcsBmv, "baud": 19200},$')" -eq 1
-          test "$(printf '%s\n' "$DIFF" | grep -c '^+' || true)" -eq 3
-          test "$(printf '%s\n' "$DIFF" | grep -c '^-' || true)" -eq 1
-
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dbus-serialbattery/dbus-serialbattery.py
           git commit -m 'Restore loader to master and register EcsBmv'
-          git push origin HEAD:ecs-bmv-integration
-
-      - name: Update project state
-        shell: bash
-        run: |
-          set -euo pipefail
-          LOADER_SHA="$(git rev-parse HEAD)"
-          export LOADER_SHA
-
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          path = Path('dbus-serialbattery/docs/PROJECT_STATE.md')
-          text = path.read_text(encoding='utf-8')
-          text = re.sub(r'^Stand: .*$', 'Stand: 2026-07-17', text, count=1, flags=re.MULTILINE)
-
-          replacement = f'''## Loader-Stand
-
-Die Loader-Datei wurde auf die aktuelle `master`-Basis zurückgesetzt. Gegenüber `master` enthält sie ausschließlich:
-
-```python
-from bms.ecs_bmv import EcsBmv
-```
-
-und:
-
-```python
-{{"bms": EcsBmv, "baud": 19200}},
-```
-
-Der frühere `sys.path.insert(0, "/data/etc/dbus-serialbattery")`-Override und alle sonstigen Altversion-Abweichungen sind entfernt.
-
-- Loader-Korrektur-Commit: `{os.environ['LOADER_SHA']}`
-- Syntaxprüfung: `python3 -m py_compile dbus-serialbattery/dbus-serialbattery.py` erfolgreich
-- Vergleich gegen `master`: genau zwei hinzugefügte ECS-BMV-Zeilen
-
-'''
-          text = re.sub(
-              r'## Kritischer Loader-Hinweis\n.*?(?=## Konfigurationsstand)',
-              replacement,
-              text,
-              count=1,
-              flags=re.DOTALL,
-          )
-
-          text = re.sub(
-              r'## Offene technische Punkte\n.*?(?=## Nächster minimaler Arbeitsschritt)',
-              '''## Offene technische Punkte
-
-1. Slave-IDs am realen System bestätigen. Aktueller Code: 1 bis 4; historisch genannt: 100, 200, 300, 400.
-2. Temperaturformel anhand realer Vergleichswerte bestätigen.
-3. Statusregister 13 bitgenau dokumentieren.
-4. Semantik der Werte in Register 14 und 15 bestätigen.
-5. BMV-Service dynamisch und eindeutig erkennen.
-6. Nicht blockierende Übernahme von BMV-Spannung, Strom und SoC implementieren.
-7. Kommunikationsalter/Staleness für ECS und BMV definieren.
-8. CVL, CCL und DCL fachlich für ESS/DVCC festlegen.
-9. OVP-, LVP-, Temperatur- und Kommunikationsverlusttests durchführen.
-10. Verhalten nach USB-Trennung, Wiederanstecken und GX-Neustart testen.
-
-''',
-              text,
-              count=1,
-              flags=re.DOTALL,
-          )
-
-          text = re.sub(
-              r'## Nächster minimaler Arbeitsschritt\n.*?(?=## Erwartete Logfolge)',
-              '''## Nächster minimaler Arbeitsschritt
-
-1. Tatsächlich auf dem GX laufenden Loader und Basisdateien gegen den Repository-Stand vergleichen.
-2. Projektkonfiguration mit `BMS_TYPE = EcsBmv` verwenden.
-3. Roh-Modbus-Test auf Register 7 für jeden realen Slave ausführen.
-4. Erst danach `EcsBmv.test_connection()` über den Service testen.
-
-''',
-              text,
-              count=1,
-              flags=re.DOTALL,
-          )
-
-          path.write_text(text, encoding='utf-8')
-          PY
-
-          git add dbus-serialbattery/docs/PROJECT_STATE.md
-          git commit -m 'Document restored ECS-BMV loader baseline'
-          git push origin HEAD:ecs-bmv-integration
-
-      - name: Remove temporary workflow
-        shell: bash
-        run: |
-          set -euo pipefail
-          git rm .github/workflows/restore-ecs-loader.yml
-          git commit -m 'Remove temporary loader restoration workflow'
           git push origin HEAD:ecs-bmv-integration

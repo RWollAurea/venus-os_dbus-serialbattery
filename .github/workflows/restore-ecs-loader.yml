@@ -1,3 +1,4 @@
+# Triggered through a merged pull request so the target-branch push event runs.
 name: Restore ECS loader to master base
 
 on:
